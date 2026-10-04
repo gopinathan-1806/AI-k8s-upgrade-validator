@@ -292,6 +292,8 @@ k8s-upgrade-report-*.html     # generated reports (gitignored)
 
 ---
 
-## License
+<img width="720" height="879" alt="Screenshot 2026-10-04 at 10 51 16 PM" src="https://github.com/user-attachments/assets/99d84aa6-ae05-4944-9a48-d8e63bbe6d22" />
 
-MIT
+<img width="1044" height="1024" alt="K8s AI cluster upgrade" src="https://github.com/user-attachments/assets/c2f32886-aa8e-448a-a096-076bc401fc9c" />
+
+
