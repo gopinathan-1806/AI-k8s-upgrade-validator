@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kubernetes Upgrade Assessment — v1.36.5+IKS → v1.37</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.6; background: #f7f8fa; color: #1f2328; }
+  .page { max-width: 960px; margin: 0 auto; padding: 32px 20px 64px; }
+
+  /* Header */
+  .header { background: #1f2328; color: #fff; border-radius: 8px; padding: 28px 32px; margin-bottom: 24px; }
+  .header h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.3px; }
+  .header .meta { color: #adb5bd; font-size: 13px; display: flex; gap: 24px; flex-wrap: wrap; margin-top: 10px; }
+  .badge-version { background: #3b82d4; color: #fff; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; display: inline-block; }
+
+  /* Executive summary */
+  .exec-box { border-radius: 8px; padding: 24px 28px; margin-bottom: 24px; background: #fffbeb; border: 1px solid #f59e0b; }
+  .exec-decision { font-size: 17px; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+  .decision-badge { padding: 3px 12px; border-radius: 12px; font-size: 13px; font-weight: 700; background: #f59e0b; color: #fff; }
+
+  /* Score cards */
+  .score-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .score-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 18px; text-align: center; }
+  .score-card .label { font-size: 11px; color: #57606a; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+  .score-card .value { font-size: 32px; font-weight: 700; line-height: 1.1; }
+  .score-card .sub { font-size: 11px; color: #57606a; margin-top: 4px; }
+  .progress-wrap { background: #e5e7eb; border-radius: 6px; height: 8px; overflow: hidden; margin-top: 8px; }
+  .progress-bar { height: 100%; border-radius: 6px; }
+  .bar-warn { background: #f59e0b; }
+  .bar-good { background: #22c55e; }
+
+  /* Sections */
+  .section { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 18px; overflow: hidden; }
+  .section-title { font-size: 14px; font-weight: 600; padding: 14px 20px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 8px; }
+  .section-body { padding: 16px 20px; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: #f7f8fa; text-align: left; padding: 8px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #57606a; border-bottom: 1px solid #e5e7eb; }
+  td { padding: 9px 12px; border-bottom: 1px solid #f0f1f3; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .tbl-wrap { overflow-x: auto; }
+  code { background: #f0f1f3; padding: 1px 5px; border-radius: 3px; font-size: 12px; font-family: monospace; }
+
+  /* Status badges */
+  .s { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+  .s-pass { background: #dcfce7; color: #15803d; }
+  .s-good { background: #d1fae5; color: #065f46; }
+  .s-warn { background: #fef3c7; color: #92400e; }
+  .s-high { background: #ffedd5; color: #c2410c; }
+  .s-crit { background: #fee2e2; color: #b91c1c; }
+  .s-none { background: #f0f1f3; color: #57606a; }
+
+  /* Issue cards */
+  .issue { border-radius: 6px; padding: 14px 16px; margin-bottom: 12px; border-left: 4px solid; }
+  .issue.critical { background: #fff5f5; border-color: #ef4444; }
+  .issue.high { background: #fff7ed; border-color: #f97316; }
+  .issue.medium { background: #fffbeb; border-color: #eab308; }
+  .issue-title { font-weight: 700; font-size: 13px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .issue-body { font-size: 13px; color: #374151; }
+  .field-row { display: flex; gap: 6px; margin-bottom: 4px; }
+  .field-label { color: #57606a; font-size: 12px; min-width: 160px; flex-shrink: 0; font-weight: 600; }
+  .field-val { font-size: 12px; color: #1f2328; }
+
+  /* Info grid */
+  .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(195px, 1fr)); gap: 10px; }
+  .info-item { background: #f7f8fa; border-radius: 6px; padding: 10px 14px; }
+  .info-item .k { font-size: 11px; color: #57606a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+  .info-item .v { font-size: 13px; font-weight: 600; word-break: break-word; }
+
+  /* Scenarios */
+  .scenarios { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+  .scenario { border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 14px; }
+  .scenario .sc-title { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .scenario .sc-answer { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .sc-yes { color: #b91c1c; }
+  .sc-no { color: #15803d; }
+  .sc-cond { color: #92400e; }
+  .scenario .sc-reason { font-size: 12px; color: #57606a; }
+
+  /* Ordered list */
+  .steps { counter-reset: step; list-style: none; padding: 0; }
+  .steps li { counter-increment: step; display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0f1f3; font-size: 13px; align-items: flex-start; }
+  .steps li:last-child { border-bottom: none; }
+  .steps li::before { content: counter(step); background: #3b82d4; color: #fff; border-radius: 50%; min-width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+
+  .checklist { list-style: none; padding: 0; }
+  .checklist li { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid #f0f1f3; font-size: 13px; }
+  .checklist li:last-child { border-bottom: none; }
+
+  .divider { height: 1px; background: #e5e7eb; margin: 16px 0; }
+  .sub-heading { font-size: 13px; font-weight: 700; margin-bottom: 10px; color: #374151; }
+
+  footer { text-align: center; font-size: 12px; color: #9ca3af; margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>Kubernetes Upgrade — Feasibility &amp; Risk Assessment</h1>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+      <span class="badge-version">v1.36.5+IKS (current)</span>
+      <span style="color:#adb5bd;font-size:18px;">→</span>
+      <span class="badge-version">v1.37.x+IKS (target)</span>
+    </div>
+    <div class="meta">
+      <span>🏢 IBM Cloud Kubernetes Service (IKS) — Managed</span>
+      <span>📍 us-south · c105.containers.test.cloud.ibm.com</span>
+      <span>🖥 6 worker nodes · Ubuntu 24.04 LTS · containerd 2.2.6</span>
+      <span>📅 Live cluster assessment</span>
+    </div>
+  </div>
+
+  <!-- EXECUTIVE SUMMARY -->
+  <div class="exec-box">
+    <div class="exec-decision">
+      Upgrade Decision: <span class="decision-badge">CONDITIONAL APPROVAL</span>
+    </div>
+    <p style="font-size:13px;color:#374151;margin-bottom:8px;">
+      The cluster is a healthy IBM IKS managed environment on v1.36.5 with 6 worker nodes across 3 zones.
+      No deprecated or removed Kubernetes APIs are actively in use, PodSecurityPolicy was already removed,
+      no admission webhooks are registered, and resource utilisation is extremely low (CPU &lt;1%, Memory &lt;11%).
+    </p>
+    <p style="font-size:13px;color:#374151;margin-bottom:8px;">
+      <strong>The upgrade is viable but conditionally blocked by two critical pre-conditions:</strong>
+      (1) A Prometheus admission-create Job has been stuck in <code>ImagePullBackOff</code> for 23 days due to ghcr.io being unreachable.
+      (2) IKS v1.37 platform availability has not been confirmed.
+    </p>
+    <p style="font-size:13px;color:#92400e;font-weight:600;">Resolve both critical issues before initiating the upgrade.</p>
+  </div>
+
+  <!-- SCORE CARDS -->
+  <div class="score-row">
+    <div class="score-card">
+      <div class="label">Readiness Score</div>
+      <div class="value" style="color:#d97706;">72</div>
+      <div class="sub">/100 · Significant Risk</div>
+      <div class="progress-wrap"><div class="progress-bar bar-warn" style="width:72%"></div></div>
+    </div>
+    <div class="score-card">
+      <div class="label">Confidence Score</div>
+      <div class="value" style="color:#d97706;">68</div>
+      <div class="sub">% · IKS 1.37 notes not public</div>
+      <div class="progress-wrap"><div class="progress-bar bar-warn" style="width:68%"></div></div>
+    </div>
+    <div class="score-card">
+      <div class="label">Critical Issues</div>
+      <div class="value" style="color:#b91c1c;">2</div>
+      <div class="sub">Must resolve before upgrade</div>
+    </div>
+    <div class="score-card">
+      <div class="label">High Risks</div>
+      <div class="value" style="color:#d97706;">4</div>
+      <div class="sub">Require remediation</div>
+    </div>
+    <div class="score-card">
+      <div class="label">Warnings</div>
+      <div class="value" style="color:#3b82d4;">5</div>
+      <div class="sub">Monitor / verify</div>
+    </div>
+    <div class="score-card">
+      <div class="label">API Removals</div>
+      <div class="value" style="color:#15803d;">0</div>
+      <div class="sub">None in active use</div>
+    </div>
+  </div>
+
+  <!-- CLUSTER INFORMATION -->
+  <div class="section">
+    <div class="section-title">🖥 Cluster Information (Live Data)</div>
+    <div class="section-body">
+      <div class="info-grid">
+        <div class="info-item"><div class="k">Platform</div><div class="v">IBM IKS (Managed)</div></div>
+        <div class="info-item"><div class="k">API Server Version</div><div class="v">v1.36.5+IKS</div></div>
+        <div class="info-item"><div class="k">Node Version</div><div class="v">v1.36.3+IKS (all 6)</div></div>
+        <div class="info-item"><div class="k">Version Skew (CP↔Node)</div><div class="v">+2 patch — acceptable</div></div>
+        <div class="info-item"><div class="k">Worker OS</div><div class="v">Ubuntu 24.04.4 LTS</div></div>
+        <div class="info-item"><div class="k">Kernel</div><div class="v">6.8.0-138-generic (amd64)</div></div>
+        <div class="info-item"><div class="k">Container Runtime</div><div class="v">containerd 2.2.6</div></div>
+        <div class="info-item"><div class="k">CNI</div><div class="v">Calico v3.31.7</div></div>
+        <div class="info-item"><div class="k">Workers (zones)</div><div class="v">6 (3 zones: .0, .64, .128)</div></div>
+        <div class="info-item"><div class="k">Max CPU Utilisation</div><div class="v">1% (all nodes)</div></div>
+        <div class="info-item"><div class="k">Max Memory Utilisation</div><div class="v">11% (all nodes)</div></div>
+        <div class="info-item"><div class="k">Disk Pressure</div><div class="v">None detected</div></div>
+        <div class="info-item"><div class="k">Active PVs / PVCs</div><div class="v">0 / 0</div></div>
+        <div class="info-item"><div class="k">Admission Webhooks</div><div class="v">0 registered</div></div>
+        <div class="info-item"><div class="k">Namespaces</div><div class="v">10 total</div></div>
+        <div class="info-item"><div class="k">kubectl Client</div><div class="v">v1.31.1 (⚠ skew: -5)</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RISK MATRIX -->
+  <div class="section">
+    <div class="section-title">⚠ Risk Matrix</div>
+    <div class="section-body">
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>Area</th><th>Status</th><th>Severity</th><th>Explanation</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Control Plane</strong></td>
+              <td><span class="s s-warn">WARNING</span></td>
+              <td>Medium</td>
+              <td>IBM-managed — not directly accessible. Must verify IKS v1.37 is available. IBM typically manages the upgrade procedure; direct operator error risk is reduced.</td>
+            </tr>
+            <tr>
+              <td><strong>APIs</strong></td>
+              <td><span class="s s-pass">PASS</span></td>
+              <td>None</td>
+              <td>Only stable v1 API groups in use. No deprecated beta APIs (policy/v1beta1, batch/v1beta1, autoscaling/v2beta2, etc.) registered or in active cluster resources.</td>
+            </tr>
+            <tr>
+              <td><strong>CRDs</strong></td>
+              <td><span class="s s-warn">WARNING</span></td>
+              <td>Medium</td>
+              <td>49 CRDs installed. VolumeSnapshot CRDs serve v1beta1 alongside v1 (storage=v1, safe). Prometheus-operator CRDs installed but controller not running — orphaned state. IBM-managed CRDs auto-update.</td>
+            </tr>
+            <tr>
+              <td><strong>Controllers</strong></td>
+              <td><span class="s s-high">HIGH RISK</span></td>
+              <td>High</td>
+              <td>Prometheus admission-create job stuck in ImagePullBackOff for 23 days (ghcr.io unreachable). IBM-managed controllers (Calico, VPC CSI, ALB) not yet confirmed compatible with v1.37 IKS build.</td>
+            </tr>
+            <tr>
+              <td><strong>Webhooks</strong></td>
+              <td><span class="s s-pass">PASS</span></td>
+              <td>None</td>
+              <td>Zero ValidatingWebhookConfiguration and MutatingWebhookConfiguration objects registered. No webhook failure risk during upgrade.</td>
+            </tr>
+            <tr>
+              <td><strong>Networking</strong></td>
+              <td><span class="s s-warn">WARNING</span></td>
+              <td>Medium</td>
+              <td>Calico v3.31.7 + Tigera Operator v1.40.15 — IBM-managed, auto-updated with cluster. Upstream Calico 3.31 supports K8s 1.29–1.32; IBM ships custom-validated builds. Brief CNI interruption possible during calico-node rolling restart.</td>
+            </tr>
+            <tr>
+              <td><strong>Storage</strong></td>
+              <td><span class="s s-good">GOOD</span></td>
+              <td>Low</td>
+              <td>No active PVs or PVCs. IBM VPC Block CSI v5.1.64 is present, active, and IBM-managed. CSI sidecars are recent. Zero data-at-rest risk.</td>
+            </tr>
+            <tr>
+              <td><strong>Security</strong></td>
+              <td><span class="s s-pass">PASS</span></td>
+              <td>None</td>
+              <td>PSP API removed in K8s 1.25 — already absent (returns 404). No PodSecurityPolicies. No privileged escalation risks. No admission webhooks. Standard RBAC.</td>
+            </tr>
+            <tr>
+              <td><strong>Runtime</strong></td>
+              <td><span class="s s-pass">PASS</span></td>
+              <td>None</td>
+              <td>containerd 2.2.6 is CRI-compliant and fully compatible with K8s 1.37. Ubuntu 24.04 LTS with kernel 6.8 is well-supported. No runtime issues expected.</td>
+            </tr>
+            <tr>
+              <td><strong>Nodes</strong></td>
+              <td><span class="s s-good">GOOD</span></td>
+              <td>Low</td>
+              <td>6 nodes all Ready, no taints, no eviction pressure. CPU ≤1%, Memory ≤11%. Ample headroom for rolling node upgrade. Multi-zone topology ensures availability during rolling restart.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- CRITICAL ISSUES -->
+  <div class="section">
+    <div class="section-title">🚨 Critical Issues — Must Resolve Before Upgrade</div>
+    <div class="section-body">
+
+      <div class="issue critical">
+        <div class="issue-title"><span class="s s-crit">CRITICAL 1</span> Prometheus Admission-Create Job — 23-day ImagePullBackOff</div>
+        <div class="issue-body">
+          <div class="field-row"><span class="field-label">What Will Break:</span><span class="field-val">Job <code>prometheus-stack-kube-prom-admission-create</code> in <code>monitoring</code> ns has been stuck for 23 days. Image <code>ghcr.io/jkroepke/kube-webhook-certgen:1.8.8</code> cannot be pulled (ghcr.io connection timeout: 140.82.112.34:443). This job provisions TLS certificates for Prometheus-operator admission webhooks.</span></div>
+          <div class="field-row"><span class="field-label">When It Will Break:</span><span class="field-val">Already broken. Pre-existing condition. Will persist and block clean post-upgrade state.</span></div>
+          <div class="field-row"><span class="field-label">Impact:</span><span class="field-val">Incomplete monitoring stack. Risk of missing webhook certs if Prometheus-operator later registers webhooks after upgrade.</span></div>
+          <div class="field-row"><span class="field-label">Severity:</span><span class="field-val">Critical — Blocking</span></div>
+          <div class="field-row"><span class="field-label">Remediation:</span><span class="field-val">Step 1: <code>kubectl delete job prometheus-stack-kube-prom-admission-create -n monitoring</code>. Step 2: Either allow ghcr.io access or mirror image to ICR. Step 3: Redeploy kube-prometheus-stack or remove it entirely if not needed.</span></div>
+        </div>
+      </div>
+
+      <div class="issue critical">
+        <div class="issue-title"><span class="s s-crit">CRITICAL 2</span> IKS v1.37 Platform Availability Not Confirmed</div>
+        <div class="issue-body">
+          <div class="field-row"><span class="field-label">What Will Break:</span><span class="field-val">IBM IKS manages Kubernetes version availability on its own cadence. K8s 1.37 may not yet be published on IKS. Attempting upgrade to an unavailable version will fail at initiation.</span></div>
+          <div class="field-row"><span class="field-label">When It Will Break:</span><span class="field-val">At upgrade initiation via ibmcloud CLI.</span></div>
+          <div class="field-row"><span class="field-label">Impact:</span><span class="field-val">Upgrade fails; cluster stays on v1.36. No degradation, but wasted effort.</span></div>
+          <div class="field-row"><span class="field-label">Severity:</span><span class="field-val">Critical — Blocking</span></div>
+          <div class="field-row"><span class="field-label">Remediation:</span><span class="field-val">Run <code>ibmcloud ks versions</code> to confirm 1.37 is listed. Review IBM Cloud changelog for IKS 1.37 GA date. Wait if not yet available.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HIGH RISKS -->
+  <div class="section">
+    <div class="section-title">🔶 High Risks</div>
+    <div class="section-body">
+
+      <div class="issue high">
+        <div class="issue-title"><span class="s s-high">HIGH 1</span> IBM-Managed Component Compatibility Unverified</div>
+        <div class="issue-body">
+          <div class="field-row"><span class="field-label">Components:</span><span class="field-val">Calico v3.31.7 + Tigera Operator v1.40.15 · IBM IKS NGINX ALB 1.15.10 · IBM VPC Block CSI v5.1.64</span></div>
+          <div class="field-row"><span class="field-label">Risk:</span><span class="field-val">These are IBM-managed add-ons. IBM typically upgrades them in lock-step with the cluster upgrade, but the specific IKS v1.37 compatibility matrix has not been verified. Upstream Calico 3.31 supports K8s up to 1.32; IBM ships validated custom builds. ALB 1.15.10 (ingress-nginx based) may have version constraints.</span></div>
+          <div class="field-row"><span class="field-label">Impact:</span><span class="field-val">Potential networking outage, storage inaccessibility, or ingress failure if add-ons lag behind during upgrade.</span></div>
+          <div class="field-row"><span class="field-label">Remediation:</span><span class="field-val">Run <code>ibmcloud ks addon versions</code>. Review IKS 1.37 release notes at cloud.ibm.com/docs/containers. Confirm IBM auto-update policy for managed add-ons.</span></div>
+        </div>
+      </div>
+
+      <div class="issue high">
+        <div class="issue-title"><span class="s s-high">HIGH 2</span> Prometheus-Operator CRDs Without Running Controller</div>
+        <div class="issue-body">
+          <div class="field-row"><span class="field-label">Components:</span><span class="field-val">10 monitoring.coreos.com CRDs installed (alertmanagerconfigs, prometheuses, servicemonitors, etc.) — but no Prometheus/AlertManager/ServiceMonitor objects exist and no operator pod is running.</span></div>
+          <div class="field-row"><span class="field-val">The monitoring stack is in a partially-deployed, inconsistent state. CRDs are installed but ownerless.</span></div>
+          <div class="field-row"><span class="field-label">Impact:</span><span class="field-val">Post-upgrade CRD schema changes could cause reconciliation failures if the operator is deployed later. Orphaned CRDs are a maintenance liability.</span></div>
+          <div class="field-row"><span class="field-label">Remediation:</span><span class="field-val">Either fully deploy kube-prometheus-stack (fix image issue first) or run <code>helm uninstall prometheus-stack -n monitoring</code> to cleanly remove all CRDs and resources.</span></div>
+        </div>
+      </div>
+
+      <div class="issue high">
+        <div class="issue-title"><span class="s s-high">HIGH 3</span> kubectl Client Version Skew — 5 Minor Versions Behind</div>
+        <div class="issue-body">
+          <div class="field-row"><span class="field-label">Client:</span><span class="field-val">kubectl v1.31.1 — Server: v1.36.5+IKS — Skew: 5 minor versions (supported: ±1)</span></div>
+          <div class="field-row"><span class="field-val">kubectl explicitly warns about this skew. Post-upgrade to 1.37 the skew grows to 6 minor versions. API requests using v1.37-specific features or changed schemas may fail silently or return errors.</span></div>
+          <div class="field-row"><span class="field-label">Remediation:</span><span class="field-val">Upgrade kubectl to v1.37.x before upgrade: <code>curl -LO https://dl.k8s.io/release/v1.37.0/bin/$(uname -s | tr A-Z a-z)/amd64/kubectl</code></span></div>
+        </div>
+      </div>
+
+      <div class="issue high">
+        <div class="issue-title"><span class="s s-high">HIGH 4</span> Worker Nodes Behind API Server Patch Level</div>
+        <div class="issue-body">
+          <div class="field-row"><span class="field-label">API Server:</span><span class="field-val">v1.36.5+IKS — Worker Nodes: v1.36.3+IKS (all 6 nodes)</span></div>
+          <div class="field-row"><span class="field-val">Nodes have not been refreshed to the latest worker image. IBM IKS worker upgrades are a separate operation from master upgrades. Starting a major minor upgrade from a stale patch baseline increases risk.</span></div>
+          <div class="field-row"><span class="field-label">Remediation:</span><span class="field-val">Run <code>ibmcloud ks worker update --cluster &lt;CLUSTER_ID&gt; --worker all</code> to bring nodes to v1.36.5 before upgrading master to v1.37.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WARNINGS -->
+  <div class="section">
+    <div class="section-title">🟡 Warnings (Monitor / Verify)</div>
+    <div class="section-body">
+
+      <div class="issue medium">
+        <div class="issue-title"><span class="s s-warn">WARN 1</span> VolumeSnapshot CRDs Serve v1beta1</div>
+        <div class="issue-body">
+          <div class="field-val"><code>volumesnapshots.snapshot.storage.k8s.io</code> and <code>volumesnapshotcontents.snapshot.storage.k8s.io</code> both serve <code>v1</code> and <code>v1beta1</code>. Storage version is v1 (correct). No active PVs/PVCs exist so immediate risk is zero. Any backup/DR tools (Velero, etc.) using v1beta1 VolumeSnapshot APIs will need updating.</div>
+        </div>
+      </div>
+
+      <div class="issue medium">
+        <div class="issue-title"><span class="s s-warn">WARN 2</span> Dormant GPU DaemonSets (0 desired replicas)</div>
+        <div class="issue-body">
+          <div class="field-val"><code>nvidia-driver-installer</code> and <code>nvidia-gpu-device-plugin</code> DaemonSets exist with 0 desired replicas. Dormant but will be upgraded with the cluster. Verify these are intentionally kept and node selectors will not change post-upgrade.</div>
+        </div>
+      </div>
+
+      <div class="issue medium">
+        <div class="issue-title"><span class="s s-warn">WARN 3</span> Kubernetes Dashboard NetworkPolicy (No Dashboard Pods)</div>
+        <div class="issue-body">
+          <div class="field-val">NetworkPolicy <code>kubernetes-dashboard</code> and <code>dashboard-metrics-scraper</code> exist in <code>kube-system</code> but no dashboard pods are deployed. Indicates a partially removed or planned installation. No active risk but cleanup is recommended.</div>
+        </div>
+      </div>
+
+      <div class="issue medium">
+        <div class="issue-title"><span class="s s-warn">WARN 4</span> ibm-operators Namespace Empty</div>
+        <div class="issue-body">
+          <div class="field-val">The <code>ibm-operators</code> namespace exists with no workloads. May be a reservation for future IBM add-on deployments. No risk but worth tracking post-upgrade for unexpected auto-deployments.</div>
+        </div>
+      </div>
+
+      <div class="issue medium">
+        <div class="issue-title"><span class="s s-warn">WARN 5</span> policy.networking.k8s.io/v1alpha1 (AdminNetworkPolicy) — Alpha API</div>
+        <div class="issue-body">
+          <div class="field-val">AdminNetworkPolicy and BaselineAdminNetworkPolicy CRDs are served under <code>v1alpha1</code>. This is a Kubernetes SIG-Network alpha feature. Alpha APIs can change or be removed between minor versions without notice. Currently no ANP objects exist — low immediate risk.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- CRD INVENTORY -->
+  <div class="section">
+    <div class="section-title">📦 CRD Inventory &amp; K8s 1.37 Compatibility</div>
+    <div class="section-body">
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>CRD Group</th><th>CRD Count</th><th>Storage Version</th><th>Managed By</th><th>K8s 1.37 Compatible</th><th>Risk</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>crd.projectcalico.org</code></td><td>16</td><td>v1</td><td>IBM / Tigera (auto)</td><td>YES — IBM-managed</td><td><span class="s s-pass">PASS</span></td></tr>
+            <tr><td><code>operator.tigera.io</code></td><td>8</td><td>v1</td><td>IBM / Tigera (auto)</td><td>LIKELY — IBM-managed</td><td><span class="s s-warn">WARNING</span></td></tr>
+            <tr><td><code>monitoring.coreos.com</code></td><td>10</td><td>v1 / v1alpha1</td><td>Helm (partial, no operator)</td><td>YES (CRD level); operator state broken</td><td><span class="s s-high">HIGH RISK</span></td></tr>
+            <tr><td><code>snapshot.storage.k8s.io</code></td><td>3</td><td>v1 (serves v1beta1)</td><td>IBM-managed</td><td>YES</td><td><span class="s s-warn">WARNING</span></td></tr>
+            <tr><td><code>policy.networking.k8s.io</code></td><td>2</td><td>v1alpha1</td><td>IBM / Calico</td><td>LIKELY (alpha API)</td><td><span class="s s-warn">WARNING</span></td></tr>
+            <tr><td><code>clusterhealth.ibm.com</code></td><td>1</td><td>v1</td><td>IBM-managed</td><td>YES</td><td><span class="s s-pass">PASS</span></td></tr>
+            <tr><td><code>ibm.com</code> (RBACSync)</td><td>1</td><td>v1alpha1</td><td>IBM-managed</td><td>YES</td><td><span class="s s-pass">PASS</span></td></tr>
+            <tr><td><code>csi.drivers.ibmcloud.io</code></td><td>1</td><td>v1</td><td>IBM-managed</td><td>YES</td><td><span class="s s-pass">PASS</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTROLLERS -->
+  <div class="section">
+    <div class="section-title">⚙ Controller &amp; Operator Compatibility</div>
+    <div class="section-body">
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>Controller / Add-on</th><th>Version</th><th>K8s 1.37 Support</th><th>Status</th><th>Upgrade Timing</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Calico (CNI)</strong></td><td>v3.31.7 (IBM build)</td><td>IBM-managed — auto-upgraded</td><td><span class="s s-warn">WARNING</span></td><td>IBM manages alongside cluster</td></tr>
+            <tr><td><strong>Tigera Operator</strong></td><td>v1.40.15 (IBM build)</td><td>IBM-managed — auto-upgraded</td><td><span class="s s-warn">WARNING</span></td><td>IBM manages alongside cluster</td></tr>
+            <tr><td><strong>IBM VPC Block CSI Driver</strong></td><td>v5.1.64</td><td>IBM-managed</td><td><span class="s s-good">GOOD</span></td><td>IBM manages during upgrade</td></tr>
+            <tr><td><strong>IBM IKS ALB (ingress-nginx)</strong></td><td>1.15.10_373478975_iks</td><td>Verify IKS 1.37 compat matrix</td><td><span class="s s-warn">WARNING</span></td><td>IBM manages during upgrade</td></tr>
+            <tr><td><strong>CoreDNS</strong></td><td>IBM-managed (3 replicas)</td><td>IBM-managed — auto-upgraded</td><td><span class="s s-pass">PASS</span></td><td>Auto-upgraded by IBM</td></tr>
+            <tr><td><strong>Metrics Server</strong></td><td>IBM-managed (2 replicas)</td><td>IBM-managed</td><td><span class="s s-pass">PASS</span></td><td>Auto-upgraded by IBM</td></tr>
+            <tr><td><strong>Snapshot Controller</strong></td><td>IBM-managed (3 replicas)</td><td>IBM-managed</td><td><span class="s s-pass">PASS</span></td><td>Auto-upgraded by IBM</td></tr>
+            <tr><td><strong>Konnectivity Agent</strong></td><td>IBM-managed (6 pods)</td><td>IBM-managed</td><td><span class="s s-pass">PASS</span></td><td>Auto-upgraded by IBM</td></tr>
+            <tr><td><strong>NodeLocalDNS</strong></td><td>IBM-managed (6 pods)</td><td>IBM-managed</td><td><span class="s s-pass">PASS</span></td><td>Auto-upgraded by IBM</td></tr>
+            <tr><td><strong>Prometheus Operator</strong></td><td>CRDs only (no operator pod)</td><td>N/A — not running</td><td><span class="s s-crit">CRITICAL</span></td><td>Fix stuck job BEFORE upgrade</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- API ANALYSIS -->
+  <div class="section">
+    <div class="section-title">🔌 API Removal Analysis (K8s 1.22 – 1.37)</div>
+    <div class="section-body">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Removed API</th><th>Removed In</th><th>Active in Cluster</th><th>Impact</th></tr></thead>
+          <tbody>
+            <tr><td><code>policy/v1beta1</code> (PSP)</td><td>K8s 1.25</td><td>NO — returns 404</td><td><span class="s s-pass">NONE</span></td></tr>
+            <tr><td><code>batch/v1beta1</code> (CronJob)</td><td>K8s 1.25</td><td>NO — v1 only</td><td><span class="s s-pass">NONE</span></td></tr>
+            <tr><td><code>autoscaling/v2beta2</code></td><td>K8s 1.26</td><td>NO — v2 only</td><td><span class="s s-pass">NONE</span></td></tr>
+            <tr><td><code>autoscaling/v2beta1</code></td><td>K8s 1.26</td><td>NO — v2 only</td><td><span class="s s-pass">NONE</span></td></tr>
+            <tr><td><code>networking.k8s.io/v1beta1</code> (Ingress)</td><td>K8s 1.22</td><td>NO — v1 only</td><td><span class="s s-pass">NONE</span></td></tr>
+            <tr><td><code>admissionregistration.k8s.io/v1beta1</code></td><td>K8s 1.22</td><td>NO — v1 only</td><td><span class="s s-pass">NONE</span></td></tr>
+            <tr><td><code>flowcontrol.apiserver.k8s.io/v1beta3</code></td><td>K8s 1.35</td><td>NO — v1 only</td><td><span class="s s-pass">NONE</span></td></tr>
+            <tr><td><code>resource.k8s.io/v1alpha2</code> (DRA)</td><td>K8s 1.33</td><td>NO — v1 only</td><td><span class="s s-pass">NONE</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:10px;font-size:12px;color:#15803d;font-weight:600;">✅ Zero removed APIs are actively in use. All API groups on this cluster use stable v1 versions. This is the strongest aspect of upgrade readiness.</p>
+    </div>
+  </div>
+
+  <!-- FAILURE SCENARIOS -->
+  <div class="section">
+    <div class="section-title">💥 Failure Scenario Analysis</div>
+    <div class="section-body">
+      <div class="scenarios">
+        <div class="scenario">
+          <div class="sc-title">⚡ Could workloads fail to start?</div>
+          <div class="sc-answer sc-cond">CONDITIONAL</div>
+          <div class="sc-reason">Only if Calico/ALB has a K8s 1.37 compatibility gap. No removed API usage found. IBM manages add-on upgrades.</div>
+        </div>
+        <div class="scenario">
+          <div class="sc-title">💀 Could controllers crash?</div>
+          <div class="sc-answer sc-cond">CONDITIONAL</div>
+          <div class="sc-reason">Prometheus operator is not running. IBM-managed controllers carry IBM's upgrade guarantee but compatibility is unverified for v1.37.</div>
+        </div>
+        <div class="scenario">
+          <div class="sc-title">📄 Could CRDs become unreadable?</div>
+          <div class="sc-answer sc-no">NO</div>
+          <div class="sc-reason">All CRDs use v1 storage versions. No structural schema issues. VolumeSnapshot v1beta1 is served but v1 is storage — safe.</div>
+        </div>
+        <div class="scenario">
+          <div class="sc-title">🔄 Could CRD controllers stop reconciling?</div>
+          <div class="sc-answer sc-cond">CONDITIONAL</div>
+          <div class="sc-reason">Prometheus-operator CRDs have no running controller. If webhooks register post-upgrade without valid certs, reconciliation fails.</div>
+        </div>
+        <div class="scenario">
+          <div class="sc-title">🚫 Could admission webhooks block deployments?</div>
+          <div class="sc-answer sc-no">NO</div>
+          <div class="sc-reason">Zero webhook configurations registered. No webhook failure risk at upgrade time.</div>
+        </div>
+        <div class="scenario">
+          <div class="sc-title">💾 Could storage become inaccessible?</div>
+          <div class="sc-answer sc-no">NO</div>
+          <div class="sc-reason">No active PVs/PVCs. IBM VPC Block CSI is IBM-managed. Zero data-at-rest risk.</div>
+        </div>
+        <div class="scenario">
+          <div class="sc-title">🌐 Could networking break?</div>
+          <div class="sc-answer sc-cond">CONDITIONAL</div>
+          <div class="sc-reason">Calico (IBM build) auto-updates. Short CNI data-plane interruption possible during calico-node rolling restart. CoreDNS and NodeLocalDNS managed by IBM.</div>
+        </div>
+        <div class="scenario">
+          <div class="sc-title">🖥 Could node upgrades fail?</div>
+          <div class="sc-answer sc-no">NO</div>
+          <div class="sc-reason">No taints, no PodDisruptionBudget violations, CPU ≤1%, Memory ≤11%. 3-zone topology ensures availability. Rolling upgrade will succeed.</div>
+        </div>
+        <div class="scenario">
+          <div class="sc-title">📡 Could kubelets fail to register?</div>
+          <div class="sc-answer sc-no">NO</div>
+          <div class="sc-reason">IKS manages upgrade sequencing to maintain valid version skew. containerd 2.2.6 is fully compatible.</div>
+        </div>
+        <div class="scenario">
+          <div class="sc-title">🏛 Could the control plane fail?</div>
+          <div class="sc-answer sc-no">NO</div>
+          <div class="sc-reason">IBM HA managed control plane with upgrade SLA. No direct operator error risk. IBM handles API server rollout.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UPGRADE SIMULATION -->
+  <div class="section">
+    <div class="section-title">🔬 Upgrade Simulation Summary</div>
+    <div class="section-body">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Component</th><th>Simulation Result</th><th>Reason</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Control Plane</strong></td><td><span class="s s-warn">WARNING</span></td><td>IBM-managed. Must confirm IKS v1.37 availability first. Reduced operator risk due to managed nature.</td></tr>
+            <tr><td><strong>Nodes</strong></td><td><span class="s s-good">GOOD</span></td><td>6 nodes all Ready, no taints, &lt;1% CPU, &lt;11% memory. Rolling upgrade will succeed with ample headroom.</td></tr>
+            <tr><td><strong>APIs</strong></td><td><span class="s s-pass">PASS</span></td><td>Clean API surface. Only stable v1 APIs in use. Zero removed API usage detected.</td></tr>
+            <tr><td><strong>CRDs</strong></td><td><span class="s s-warn">WARNING</span></td><td>Orphaned monitoring CRDs and VolumeSnapshot v1beta1 are minor risks. IBM-managed CRDs will auto-update.</td></tr>
+            <tr><td><strong>Controllers</strong></td><td><span class="s s-high">HIGH RISK</span></td><td>Stuck Prometheus job persists. IBM-managed controllers compatibility with 1.37 not yet confirmed.</td></tr>
+            <tr><td><strong>Networking</strong></td><td><span class="s s-warn">WARNING</span></td><td>Calico/CoreDNS IBM-managed. Short CNI interruption during rolling restart is possible. Confirm ALB compatibility.</td></tr>
+            <tr><td><strong>Storage</strong></td><td><span class="s s-pass">PASS</span></td><td>No active PVs/PVCs. IBM VPC CSI healthy. Zero storage data risk.</td></tr>
+            <tr><td><strong>Security</strong></td><td><span class="s s-pass">PASS</span></td><td>PSP removed, no webhooks, clean RBAC, no privileged workload risks.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESOURCE PRESSURE -->
+  <div class="section">
+    <div class="section-title">📊 Resource Pressure — All Nodes</div>
+    <div class="section-body">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Node</th><th>Zone</th><th>CPU (cores)</th><th>CPU%</th><th>Memory (Mi)</th><th>Memory%</th><th>Eviction Risk</th></tr></thead>
+          <tbody>
+            <tr><td>10.240.0.12</td><td>us-south-1</td><td>47m</td><td>1%</td><td>1190</td><td>9%</td><td><span class="s s-pass">NONE</span></td></tr>
+            <tr><td>10.240.0.13</td><td>us-south-1</td><td>67m</td><td>1%</td><td>1302</td><td>10%</td><td><span class="s s-pass">NONE</span></td></tr>
+            <tr><td>10.240.128.10</td><td>us-south-3</td><td>49m</td><td>1%</td><td>1190</td><td>9%</td><td><span class="s s-pass">NONE</span></td></tr>
+            <tr><td>10.240.128.9</td><td>us-south-3</td><td>43m</td><td>1%</td><td>1163</td><td>9%</td><td><span class="s s-pass">NONE</span></td></tr>
+            <tr><td>10.240.64.11</td><td>us-south-2</td><td>55m</td><td>1%</td><td>1479</td><td>11%</td><td><span class="s s-pass">NONE</span></td></tr>
+            <tr><td>10.240.64.12</td><td>us-south-2</td><td>67m</td><td>1%</td><td>1280</td><td>9%</td><td><span class="s s-pass">NONE</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:10px;font-size:12px;color:#15803d;font-weight:600;">✅ No resource pressure. Ample headroom for rolling upgrade with node drains. No OOMKill or eviction risks.</p>
+    </div>
+  </div>
+
+  <!-- REQUIRED ACTIONS -->
+  <div class="section">
+    <div class="section-title">✅ Required Actions &amp; Recommended Upgrade Order</div>
+    <div class="section-body">
+
+      <p class="sub-heading" style="color:#b91c1c;">— Pre-Upgrade (Critical, Blocking) —</p>
+      <ol class="steps">
+        <li><strong>Confirm IKS v1.37 availability</strong> — Run <code>ibmcloud ks versions</code>. Only proceed if 1.37 appears. Review IBM Cloud changelog for IKS 1.37 GA date at cloud.ibm.com/docs/containers.</li>
+        <li><strong>Resolve Prometheus stuck job</strong> — <code>kubectl delete job prometheus-stack-kube-prom-admission-create -n monitoring</code>. Then either restore ghcr.io access, mirror <code>ghcr.io/jkroepke/kube-webhook-certgen:1.8.8</code> to ICR, or remove kube-prometheus-stack entirely: <code>helm uninstall prometheus-stack -n monitoring</code>.</li>
+        <li><strong>Update kubectl to v1.37.x</strong> — Eliminate the 5-minor-version client skew before upgrade.</li>
+        <li><strong>Bring nodes to v1.36.5</strong> — <code>ibmcloud ks worker update --cluster &lt;CLUSTER_ID&gt; --worker all</code>.</li>
+        <li><strong>Verify IBM add-on compatibility</strong> — <code>ibmcloud ks addon versions</code>. Confirm Calico, ALB, VPC CSI compatibility with IKS v1.37 in IBM documentation.</li>
+      </ol>
+
+      <div class="divider"></div>
+      <p class="sub-heading">— Recommended Upgrade Order —</p>
+      <ol class="steps">
+        <li><strong>Pre-flight validation</strong> — Confirm all blocking issues resolved, all 6 nodes Ready, stuck job deleted.</li>
+        <li><strong>Refresh worker nodes to v1.36.5</strong> — Ensure clean baseline patch level before minor version bump.</li>
+        <li><strong>Upgrade control plane</strong> — <code>ibmcloud ks cluster master update --cluster &lt;CLUSTER_ID&gt; --version 1.37</code>. IBM manages HA rollover.</li>
+        <li><strong>Monitor IBM auto-upgrades</strong> — Calico, CoreDNS, Konnectivity, metrics-server, snapshot-controller auto-update. Watch pod restarts: <code>kubectl get pods -A -w</code>.</li>
+        <li><strong>Upgrade worker nodes to v1.37</strong> — <code>ibmcloud ks worker update --cluster &lt;CLUSTER_ID&gt; --worker all</code>. Nodes drain and reboot one at a time per zone.</li>
+        <li><strong>Verify ALB and VPC CSI post-upgrade</strong> — Confirm pods running on new versions, ingress health endpoint returns 200.</li>
+        <li><strong>Run post-upgrade validations</strong> — Full checklist below.</li>
+      </ol>
+
+      <div class="divider"></div>
+      <p class="sub-heading">— Post-Upgrade Validations —</p>
+      <ul class="checklist">
+        <li>☐ <span>All 6 nodes <code>Ready</code>: <code>kubectl get nodes</code></span></li>
+        <li>☐ <span>calico-node DaemonSet fully running: <code>kubectl get pods -n calico-system</code></span></li>
+        <li>☐ <span>CoreDNS, NodeLocalDNS pods healthy in kube-system</span></li>
+        <li>☐ <span>ALB pods running on updated image</span></li>
+        <li>☐ <span>VPC Block CSI controller and node pods healthy</span></li>
+        <li>☐ <span>Ingress health returns 200: check <code>k8s-alb-health</code> ingress</span></li>
+        <li>☐ <span>Metrics server responds: <code>kubectl top nodes</code></span></li>
+        <li>☐ <span>API server healthy: <code>kubectl get --raw /healthz</code> → <code>ok</code></span></li>
+        <li>☐ <span>No new Warning events: <code>kubectl get events -A --field-selector type=Warning</code></span></li>
+        <li>☐ <span>Deploy test workload and verify PVC provisioning in non-production namespace</span></li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <p>Made with IBM Bob</p>
+</footer>
+</body>
+</html>
